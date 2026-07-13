@@ -60,6 +60,11 @@ export class Directory extends FileSystemNode {
     if (idx !== -1) this.children.splice(idx, 1)
   }
 
+  /** 取得所有子節點（供 Visitor 遍歷使用） */
+  getChildren(): FileSystemNode[] {
+    return this.children
+  }
+
   accept(visitor: IVisitor): unknown {
     return visitor.visitDirectory(this)
   }

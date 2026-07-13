@@ -2,7 +2,7 @@
 // Visitor Pattern — 訪問者模式
 // ============================================================
 
-import type { Directory, WordFile, ImageFile, TextFile } from './composite'
+import type { FileSystemNode, Directory, WordFile, ImageFile, TextFile } from './composite'
 
 // ────────────────────────────────────────────────────────────
 // IVisitor 介面
@@ -43,50 +43,72 @@ export class SizeVisitor implements IVisitor {
 }
 
 // ────────────────────────────────────────────────────────────
-// SearchVisitor：根據副檔名搜尋，回傳符合的節點陣列
+// SearchVisitor：根據關鍵字搜尋，支援無限層級遞迴
+//
+// 【修復說明】
+//   舊版使用 extension.endsWith() 做尾綴精確比對，且回傳值
+//   設計讓人誤解遞迴是否正確觸發。
+//   新版：
+//   1. constructor 接收 keyword（關鍵字，不限格式）
+//   2. visitDirectory：先比對目錄名稱，再用 getChildren()
+//      對每個 child 呼叫 child.accept(this) → 真正的深層遞迴
+//   3. 各 visitXxxFile：用 name.includes(keyword) 模糊比對
+//   4. 結果由 private results 統一收集，對外只開 getResults()
 // ────────────────────────────────────────────────────────────
-import type { FileSystemNode } from './composite'
-
 export class SearchVisitor implements IVisitor {
-  private extension: string
-  public results: FileSystemNode[] = []
+  private keyword: string
+  private results: FileSystemNode[] = []
 
   /**
-   * @param extension 副檔名，例如 '.docx'、'.png'
+   * @param keyword 搜尋關鍵字（大小寫不敏感）
+   *                可傳完整檔名、副檔名（如 ".docx"）或任意片段
    */
-  constructor(extension: string) {
-    // 統一加上前綴點，方便比對
-    this.extension = extension.startsWith('.')
-      ? extension.toLowerCase()
-      : '.' + extension.toLowerCase()
+  constructor(keyword: string) {
+    // 統一轉小寫，避免大小寫差異造成漏搜
+    this.keyword = keyword.toLowerCase()
     this.results = []
   }
 
-  visitDirectory(node: Directory): FileSystemNode[] {
-    console.log('掃描節點: ' + node.name)
-    node.children.forEach((child) => child.accept(this))
-    return this.results
-  }
-
-  private _check(node: FileSystemNode): void {
-    console.log('掃描節點: ' + node.name)
-    if (node.name.toLowerCase().endsWith(this.extension)) {
-      this.results.push(node)
+  // ── 目錄節點：關鍵邏輯 ────────────────────────────────────
+  // 1. 比對目錄本身的名稱
+  // 2. 用迴圈遍歷所有 children，每個都呼叫 child.accept(this)
+  //    → Visitor 鑽進下一層，達成無限深度遞迴
+  visitDirectory(directory: Directory): void {
+    console.log('掃描節點: ' + directory.name)
+    // 1. 目錄名稱比對
+    if (directory.name.toLowerCase().includes(this.keyword)) {
+      this.results.push(directory)
+    }
+    // 2. 遞迴進入所有子節點（關鍵！缺少這步會造成遞迴中斷）
+    for (const child of directory.getChildren()) {
+      child.accept(this)
     }
   }
 
-  visitWordFile(node: WordFile): FileSystemNode[] {
-    this._check(node)
-    return this.results
+  // ── 檔案節點：name.includes(keyword) 模糊比對 ────────────
+  visitWordFile(file: WordFile): void {
+    console.log('掃描節點: ' + file.name)
+    if (file.name.toLowerCase().includes(this.keyword)) {
+      this.results.push(file)
+    }
   }
 
-  visitImageFile(node: ImageFile): FileSystemNode[] {
-    this._check(node)
-    return this.results
+  visitImageFile(file: ImageFile): void {
+    console.log('掃描節點: ' + file.name)
+    if (file.name.toLowerCase().includes(this.keyword)) {
+      this.results.push(file)
+    }
   }
 
-  visitTextFile(node: TextFile): FileSystemNode[] {
-    this._check(node)
+  visitTextFile(file: TextFile): void {
+    console.log('掃描節點: ' + file.name)
+    if (file.name.toLowerCase().includes(this.keyword)) {
+      this.results.push(file)
+    }
+  }
+
+  /** 取回所有符合的節點（遍歷結束後呼叫） */
+  getResults(): FileSystemNode[] {
     return this.results
   }
 }

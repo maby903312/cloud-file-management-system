@@ -109,13 +109,16 @@ const runSearch = () => {
     logs.value.push({ id: _logId++, message: '[系統] 請輸入搜尋關鍵字', type: 'system' })
     return
   }
+  // 建立 SearchVisitor，對 activeScope 執行遍歷
   const v = new SearchVisitor(query)
   scope.accept(v)
+  // 透過 getResults() 取得所有深層符合節點
+  const found = v.getResults()
   visitorResult.value = {
-    title: `🔍 搜尋結果："${query}"（範圍: ${scope.name}，共 ${v.results.length} 筆）`,
-    content: v.results.length > 0
-      ? v.results.map(f => `• ${f.name}  [${f.size} KB]`).join('\n')
-      : '找不到符合的檔案',
+    title: `🔍 搜尋結果：「${query}」（範圍: ${scope.name}，共 ${found.length} 筆）`,
+    content: found.length > 0
+      ? found.map(f => `• ${f.name}  [${f.size} KB]  ${f.getPath()}`).join('\n')
+      : '找不到符合的節點',
   }
 }
 
