@@ -15,6 +15,8 @@ const props = defineProps<{
   node: FileSystemNode
   selectedNode: FileSystemNode | null
   depth: number
+  sortBy: 'name' | 'size' | 'type' | 'tags'
+  sortDir: 'asc' | 'desc'
 }>()
 
 const emit = defineEmits<{
@@ -33,9 +35,31 @@ const icon = computed(() => {
   return '📄'
 })
 
-const children = computed(() =>
-  props.node instanceof Directory ? props.node.children : []
-)
+/** 取得副檔名（用於類型排序） */
+const extOf = (node: FileSystemNode): string => {
+  const dot = node.name.lastIndexOf('.')
+  return dot === -1 ? '' : node.name.slice(dot + 1).toLowerCase()
+}
+
+/** 排序後的子節點：目錄永遠排在前，再依用戶選擇的方式排序檔案 */
+const sortedChildren = computed(() => {
+  if (!(props.node instanceof Directory)) return []
+  const dirs  = props.node.children.filter(c => c instanceof Directory)
+  const files = props.node.children.filter(c => !(c instanceof Directory))
+
+  const compare = (a: FileSystemNode, b: FileSystemNode): number => {
+    let result = 0
+    switch (props.sortBy) {
+      case 'name': result = a.name.localeCompare(b.name, 'zh-Hant'); break
+      case 'size': result = a.size - b.size; break
+      case 'type': result = extOf(a).localeCompare(extOf(b)); break
+      case 'tags': result = a.tags.size - b.tags.size; break
+    }
+    return props.sortDir === 'desc' ? -result : result
+  }
+
+  return [...dirs.sort(compare), ...files.sort(compare)]
+})
 
 const handleClick = () => {
   if (isDir.value) isExpanded.value = !isExpanded.value
@@ -110,15 +134,17 @@ const metadata = computed((): string => {
       </div>
     </div>
 
-    <!-- ── Children (Recursive) ──────────────────────────────── -->
+    <!-- ── Children (Recursive) ────────────────────────── -->
     <Transition name="tree-expand">
       <div v-if="isDir && isExpanded">
         <FileTreeNode
-          v-for="child in children"
+          v-for="child in sortedChildren"
           :key="child.name"
           :node="child"
           :selectedNode="selectedNode"
           :depth="depth + 1"
+          :sortBy="sortBy"
+          :sortDir="sortDir"
           @select="$emit('select', $event)"
         />
       </div>

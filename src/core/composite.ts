@@ -34,6 +34,9 @@ export abstract class FileSystemNode {
 
   /** 接受訪問者（Visitor Pattern 的 accept 鉤子） */
   abstract accept(visitor: IVisitor): unknown
+
+  /** 深拷貝自身，回傳一個全新節點（parent 不被拷貝） */
+  abstract clone(): FileSystemNode
 }
 
 // ────────────────────────────────────────────────────────────
@@ -68,6 +71,19 @@ export class Directory extends FileSystemNode {
   accept(visitor: IVisitor): unknown {
     return visitor.visitDirectory(this)
   }
+
+  /**
+   * 深拷貝目錄：遞迴 clone 所有子節點，并重新設定 parent
+   * 結果的 parent 為 null（待貼上動作內再更新）
+   */
+  clone(): Directory {
+    const copy = new Directory(this.name, new Date(this.createdAt))
+    copy.tags = new Set(this.tags)
+    for (const child of this.children) {
+      copy.add(child.clone()) // add() 自動設 parent
+    }
+    return copy
+  }
 }
 
 // ────────────────────────────────────────────────────────────
@@ -95,6 +111,12 @@ export class WordFile extends File {
   accept(visitor: IVisitor): unknown {
     return visitor.visitWordFile(this)
   }
+
+  clone(): WordFile {
+    const copy = new WordFile(this.name, this.size, this.pages, new Date(this.createdAt))
+    copy.tags = new Set(this.tags)
+    return copy
+  }
 }
 
 /** 圖片檔案（.png / .jpg 等） */
@@ -117,6 +139,12 @@ export class ImageFile extends File {
   accept(visitor: IVisitor): unknown {
     return visitor.visitImageFile(this)
   }
+
+  clone(): ImageFile {
+    const copy = new ImageFile(this.name, this.size, this.width, this.height, new Date(this.createdAt))
+    copy.tags = new Set(this.tags)
+    return copy
+  }
 }
 
 /** 純文字檔案（.txt） */
@@ -135,5 +163,11 @@ export class TextFile extends File {
 
   accept(visitor: IVisitor): unknown {
     return visitor.visitTextFile(this)
+  }
+
+  clone(): TextFile {
+    const copy = new TextFile(this.name, this.size, this.encoding, new Date(this.createdAt))
+    copy.tags = new Set(this.tags)
+    return copy
   }
 }

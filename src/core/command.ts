@@ -71,6 +71,12 @@ export class CommandManager {
     if (this.undoStack.length === 0) return ''
     return this.undoStack[this.undoStack.length - 1].name
   }
+
+  /** Redo 堆最頂的命令名稱，給 Redo 按鈕顯示用 */
+  get lastRedoName(): string {
+    if (this.redoStack.length === 0) return ''
+    return this.redoStack[this.redoStack.length - 1].name
+  }
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -116,5 +122,65 @@ export class TagCommand implements ICommand {
     // 完整還原舊標簽集合
     this.node.tags.clear()
     this.previousTags.forEach((t) => this.node.tags.add(t))
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// DeleteCommand：删除一個節點（記住索引以支援 Undo 插回原位置）
+// ────────────────────────────────────────────────────────────────
+import { Directory } from './composite'
+
+export class DeleteCommand implements ICommand {
+  readonly name: string
+  private parent: Directory
+  private node: FileSystemNode
+  private index: number
+
+  constructor(node: FileSystemNode) {
+    if (!node.parent) throw new Error('無法删除根節點')
+    this.parent = node.parent
+    this.node = node
+    this.index = this.parent.children.indexOf(node)
+    this.name = `删除 ${node.name}`
+  }
+
+  execute(): void {
+    console.log(`[Command] 删除節點「${this.node.name}」`)
+    this.parent.remove(this.node)
+    this.node.parent = null
+  }
+
+  undo(): void {
+    console.log(`[Undo] 插回節點「${this.node.name}」至原位置`)
+    this.parent.children.splice(this.index, 0, this.node)
+    this.node.parent = this.parent
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// PasteCommand：將剩貼簼中的節點深拷貝後貼入目標目錄
+//   Undo 會將該 clone 從目標目錄移除
+// ────────────────────────────────────────────────────────────────
+export class PasteCommand implements ICommand {
+  readonly name: string
+  private target: Directory
+  private cloned: FileSystemNode
+
+  constructor(source: FileSystemNode, target: Directory) {
+    this.target = target
+    this.cloned = source.clone()
+    // 貼上後名稱加後綴 (副本)
+    this.cloned.name = this.cloned.name + ' (副本)'
+    this.name = `貼上 ${source.name}`
+  }
+
+  execute(): void {
+    console.log(`[Command] 貼上節點「${this.cloned.name}」至「${this.target.name}」`)
+    this.target.add(this.cloned)
+  }
+
+  undo(): void {
+    console.log(`[Undo] 移除貼上的節點「${this.cloned.name}」`)
+    this.target.remove(this.cloned)
   }
 }

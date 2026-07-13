@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, shallowRef } from 'vue'
 import { root, commandManager } from '@core/index'
 import { SizeVisitor, SearchVisitor, XmlExportVisitor } from '@core/visitor'
-import { TagCommand } from '@core/command'
+import { TagCommand, DeleteCommand, PasteCommand } from '@core/command'
 import type { FileSystemNode } from '@core/composite'
 import { Directory, WordFile, ImageFile, TextFile } from '@core/composite'
 import FileTreeNode from './components/FileTreeNode.vue'
@@ -166,6 +166,75 @@ const undoCmd = () => {
 /** 判斷選取節點是否已有某標簽（給按鈕顯示 Toggle 狀態） */
 const hasTag = (tag: string): boolean =>
   !!selectedNode.value?.tags.has(tag)
+
+// ─────────────────────────────────────────────────────────────
+// Redo
+// ─────────────────────────────────────────────────────────────
+const redoCmd = () => {
+  commandManager.redo()
+  forceUpdate()
+}
+
+// ─────────────────────────────────────────────────────────────
+// 排序狀態
+// ─────────────────────────────────────────────────────────────
+const sortBy  = ref<'name' | 'size' | 'type' | 'tags'>('name')
+const sortDir = ref<'asc' | 'desc'>('asc')
+
+const toggleSort = (key: typeof sortBy.value) => {
+  if (sortBy.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = key
+    sortDir.value = 'asc'
+  }
+  forceUpdate()
+}
+
+const sortDirLabel = computed(() => sortDir.value === 'asc' ? '↑' : '↓')
+
+// ─────────────────────────────────────────────────────────────
+// 剪貼谿：複製 / 貼上 / 删除
+// ─────────────────────────────────────────────────────────────
+const clipboard = shallowRef<FileSystemNode | null>(null)
+
+const copyNode = () => {
+  if (!selectedNode.value) {
+    logs.value.push({ id: _logId++, message: '[系統] 請先選取節點再複製', type: 'system' })
+    return
+  }
+  clipboard.value = selectedNode.value
+  logs.value.push({ id: _logId++, message: `[系統] 已複製「${selectedNode.value.name}」到剪貼谿`, type: 'system' })
+}
+
+const pasteNode = () => {
+  if (!clipboard.value) {
+    logs.value.push({ id: _logId++, message: '[系統] 剪貼谿為空，請先複製', type: 'system' })
+    return
+  }
+  // 貼上目標：如果選取的是目錄就貼進去，否則貼到目錄的父層
+  const target = selectedNode.value instanceof Directory
+    ? selectedNode.value
+    : (selectedNode.value?.parent ?? root)
+  commandManager.execute(new PasteCommand(clipboard.value, target))
+  forceUpdate()
+}
+
+const deleteNode = () => {
+  if (!selectedNode.value) {
+    logs.value.push({ id: _logId++, message: '[系統] 請先選取要删除的節點', type: 'system' })
+    return
+  }
+  if (!selectedNode.value.parent) {
+    logs.value.push({ id: _logId++, message: '[系統] 不可删除根節點', type: 'system' })
+    return
+  }
+  const name = selectedNode.value.name
+  commandManager.execute(new DeleteCommand(selectedNode.value))
+  selectedNode.value = null
+  logs.value.push({ id: _logId++, message: `[系統] 已删除「${name}」`, type: 'system' })
+  forceUpdate()
+}
 </script>
 
 <template>
@@ -203,6 +272,60 @@ const hasTag = (tag: string): boolean =>
       </div>
     </header>
 
+    <!-- ╔══════════════════════════════════════════ TOOLBAR ═════╗ -->
+    <div class="flex-none flex items-center gap-1.5 px-4 py-2 bg-[#0d1117] border-b border-[#30363d]">
+
+      <!-- Edit: Undo / Redo -->
+      <button @click="undoCmd" :disabled="!commandManager.canUndo"
+        class="toolbar-btn disabled:opacity-30 disabled:cursor-not-allowed"
+        :title="commandManager.canUndo ? `復原: ${commandManager.lastCommandName}` : 'Undo'">
+        ↩
+      </button>
+      <button @click="redoCmd" :disabled="!commandManager.canRedo"
+        class="toolbar-btn disabled:opacity-30 disabled:cursor-not-allowed"
+        :title="commandManager.canRedo ? `重做: ${commandManager.lastRedoName}` : 'Redo'">
+        ↪
+      </button>
+
+      <div class="w-px h-4 bg-[#30363d] mx-1"></div>
+
+      <!-- Edit: Copy / Paste / Delete -->
+      <button @click="copyNode" class="toolbar-btn" title="複製">📋 複製</button>
+      <button @click="pasteNode" :disabled="!clipboard"
+        class="toolbar-btn disabled:opacity-30 disabled:cursor-not-allowed" title="貼上">
+        📎 貼上
+        <span v-if="clipboard" class="text-[9px] text-gray-600 font-mono">({{ clipboard.name }})</span>
+      </button>
+      <button @click="deleteNode" class="toolbar-btn text-red-400/70 hover:text-red-400" title="删除">🗑️ 删除</button>
+
+      <div class="w-px h-4 bg-[#30363d] mx-1"></div>
+
+      <!-- Sort -->
+      <span class="text-[10px] text-gray-700 font-mono mr-0.5">排序</span>
+      <button
+        v-for="key in [['name','名稱'],['size','大小'],['type','類型'],['tags','標簽']] as const"
+        :key="key[0]"
+        @click="toggleSort(key[0])"
+        :class="[
+          'toolbar-btn',
+          sortBy === key[0] ? 'text-[#58a6ff] border-[#58a6ff]/30 bg-[#58a6ff]/10' : ''
+        ]"
+      >
+        {{ key[1] }}<span v-if="sortBy === key[0]" class="ml-0.5">{{ sortDirLabel }}</span>
+      </button>
+
+      <div class="w-px h-4 bg-[#30363d] mx-1"></div>
+
+      <!-- Quick Tags -->
+      <button @click="toggleTag('Urgent')" class="toolbar-tag text-red-400 border-red-500/25"
+        :class="hasTag('Urgent') ? 'bg-red-500/20' : ''">+ Urgent</button>
+      <button @click="toggleTag('Work')" class="toolbar-tag text-[#58a6ff] border-[#58a6ff]/25"
+        :class="hasTag('Work') ? 'bg-[#58a6ff]/20' : ''">+ Work</button>
+      <button @click="toggleTag('Personal')" class="toolbar-tag text-green-400 border-green-500/25"
+        :class="hasTag('Personal') ? 'bg-green-500/20' : ''">+ Personal</button>
+
+    </div>
+
     <!-- ╔══════════════════════════════════════════ BODY ══════╗ -->
     <div class="flex flex-1 overflow-hidden">
 
@@ -225,6 +348,8 @@ const hasTag = (tag: string): boolean =>
             :node="root"
             :selectedNode="selectedNode"
             :depth="0"
+            :sortBy="sortBy"
+            :sortDir="sortDir"
             @select="selectNode"
           />
         </div>
@@ -251,6 +376,8 @@ const hasTag = (tag: string): boolean =>
                   ? 'text-red-400 bg-red-500/15 border-red-500/30'
                   : tag === 'Work'
                   ? 'text-[#58a6ff] bg-[#58a6ff]/15 border-[#58a6ff]/30'
+                  : tag === 'Personal'
+                  ? 'text-green-400 bg-green-500/15 border-green-500/30'
                   : 'text-purple-400 bg-purple-500/15 border-purple-500/30'"
               >{{ tag }}</span>
             </div>
@@ -359,6 +486,14 @@ const hasTag = (tag: string): boolean =>
                     {{ hasTag('Work') ? '移除 Work' : '標記 Work' }}
                   </span>
                   <span class="action-hint" :class="hasTag('Work') ? 'text-[#58a6ff]' : ''">TagCommand</span>
+                </button>
+                <!-- #4 Personal Toggle -->
+                <button @click="toggleTag('Personal')" class="action-btn hover:border-green-500/25">
+                  <span class="icon-badge bg-green-500/10 border-green-500/20">🟢</span>
+                  <span class="action-label">
+                    {{ hasTag('Personal') ? '移除 Personal' : '標記 Personal' }}
+                  </span>
+                  <span class="action-hint" :class="hasTag('Personal') ? 'text-green-600' : ''">TagCommand</span>
                 </button>
                 <!-- #5 Undo with dynamic name -->
                 <button
@@ -495,6 +630,18 @@ const hasTag = (tag: string): boolean =>
 
 .action-hint {
   @apply text-[10px] text-gray-700 font-mono;
+}
+
+/* ── Toolbar buttons ──────────────────────────────────────── */
+.toolbar-btn {
+  @apply px-2 py-1 rounded-md text-[11px] font-mono text-gray-400 border border-transparent
+         cursor-pointer transition-all duration-100
+         hover:bg-white/[0.05] hover:text-gray-200 hover:border-[#30363d];
+}
+
+.toolbar-tag {
+  @apply px-2 py-0.5 rounded-full text-[10px] font-mono border cursor-pointer
+         transition-all duration-100 hover:opacity-100;
 }
 
 /* ── Visitor result animation ──────────────────────────────── */
