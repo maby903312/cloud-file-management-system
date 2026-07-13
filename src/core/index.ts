@@ -16,22 +16,22 @@ import { CommandManager, TagCommand } from './command'
 // ────────────────────────────────────────────────────────────
 export const root = new Directory('Root')
 
-// 專案文件_Project_Docs
-const projectDocs = new Directory('專案文件_Project_Docs')
+// 專案文件 (Project_Docs)
+const projectDocs = new Directory('專案文件')
 const specDoc = new WordFile('需求規格書.docx', 500, 15)
 const archDiagram = new ImageFile('系統架構圖.png', 2048, 1920, 1080)
 projectDocs.add(specDoc).add(archDiagram)
 
-// 個人筆記_Personal_Notes
-const personalNotes = new Directory('個人筆記_Personal_Notes')
+// 個人筆記 (Personal_Notes)
+const personalNotes = new Directory('個人筆記')
 const todoList = new TextFile('待辦清單.txt', 1, 'UTF-8')
-const archive2025 = new Directory('Archive_2025')
+const archive2025 = new Directory('2025備份')
 const oldMeeting = new WordFile('舊會議記錄.docx', 200, 5)
 archive2025.add(oldMeeting)
 personalNotes.add(todoList).add(archive2025)
 
-// README.txt（Root 直屬）
-const readme = new TextFile('README.txt', 1, 'ASCII')
+// README.txt（Root 直屬，500B = 0.5 KB）
+const readme = new TextFile('README.txt', 0.5, 'ASCII')
 
 // 組裝 Root
 root.add(projectDocs).add(personalNotes).add(readme)
@@ -59,8 +59,9 @@ function runConsoleDemo(): void {
   console.log('\n【2. SearchVisitor：搜尋 .docx 檔案】')
   const searchVisitor = new SearchVisitor('.docx')
   root.accept(searchVisitor)
-  console.log(`\n▶ 找到 ${searchVisitor.results.length} 個 .docx 檔案：`)
-  searchVisitor.results.forEach((f) => console.log('  -', f.name))
+  const docxFiles = searchVisitor.getResults()
+  console.log(`\n▶ 找到 ${docxFiles.length} 個 .docx 檔案：`)
+  docxFiles.forEach((f) => console.log('  -', f.name))
 
   // ── XmlExportVisitor ──────────────────────────────────────
   console.log('\n【3. XmlExportVisitor：匯出 XML】')

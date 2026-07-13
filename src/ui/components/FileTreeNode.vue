@@ -48,6 +48,25 @@ const TAG_COLORS: Record<string, string> = {
 }
 const tagColor = (tag: string) =>
   TAG_COLORS[tag] ?? 'text-purple-400 bg-purple-500/15 border-purple-500/30'
+
+/**
+ * 型別專屬 metadata 字串，顯示於檔名旁邊
+ * 例：「500 KB, pages: 15」「2048 KB, res: 1920×1080」「1 KB, enc: UTF-8」
+ */
+const metadata = computed((): string => {
+  const node = props.node
+  if (node instanceof WordFile) {
+    return `${node.size} KB, pages: ${node.pages}`
+  }
+  if (node instanceof ImageFile) {
+    return `${node.size} KB, res: ${node.width}×${node.height}`
+  }
+  if (node instanceof TextFile) {
+    return `${node.size} KB, enc: ${node.encoding}`
+  }
+  // Directory：不顯示（size 永遠為 0）
+  return ''
+})
 </script>
 
 <template>
@@ -71,8 +90,15 @@ const tagColor = (tag: string) =>
       <!-- File type icon -->
       <span class="text-[15px] leading-none flex-none">{{ icon }}</span>
 
-      <!-- Node name -->
-      <span class="text-[13px] font-medium truncate flex-1 min-w-0">{{ node.name }}</span>
+      <!-- Node name + metadata -->
+      <span class="flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
+        <span class="text-[13px] font-medium truncate shrink-0 max-w-[48%]">{{ node.name }}</span>
+        <span
+          v-if="metadata"
+          class="text-[10px] font-mono text-gray-600 truncate shrink"
+          :class="isSelected ? 'text-[#58a6ff]/60' : ''"
+        >{{ metadata }}</span>
+      </span>
 
       <!-- Tags badges -->
       <div v-if="node.tags.size > 0" class="flex gap-1 flex-none ml-1">

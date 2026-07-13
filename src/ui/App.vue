@@ -39,7 +39,7 @@ const getNodeIcon = (node: FileSystemNode): string => {
 // ─────────────────────────────────────────────────────────────
 // Console Log 攔截 → 導流到系統日誌面板
 // ─────────────────────────────────────────────────────────────
-type LogType = 'scan' | 'command' | 'undo' | 'system' | 'info'
+type LogType = 'scan' | 'command' | 'undo' | 'system' | 'info' | 'start'
 
 interface LogEntry { id: number; message: string; type: LogType }
 
@@ -62,6 +62,7 @@ const logClass = (type: LogType): string =>
     undo:    'text-yellow-400',
     system:  'text-orange-400',
     info:    'text-gray-300',
+    start:   'text-green-400 font-semibold',
   } as Record<LogType, string>)[type] ?? 'text-gray-300'
 
 // 立即攔截（在 setup 階段執行，早於任何 Visitor/Command 呼叫）
@@ -89,8 +90,14 @@ const clearLogs = () => { logs.value = [] }
 interface VisitorResult { title: string; content: string }
 const visitorResult = ref<VisitorResult | null>(null)
 
+/** 推入一條綠色「開始執行」分隔訊息 */
+const logStart = (action: string) => {
+  logs.value.push({ id: _logId++, message: `▶ 開始執行 ${action}`, type: 'start' })
+}
+
 const calcSize = () => {
   const scope = activeScope.value
+  logStart(`計算容量（範圍: ${scope.name}）`)
   const v = new SizeVisitor()
   const size = scope.accept(v) as number
   visitorResult.value = {
@@ -109,6 +116,7 @@ const runSearch = () => {
     logs.value.push({ id: _logId++, message: '[系統] 請輸入搜尋關鍵字', type: 'system' })
     return
   }
+  logStart(`搜尋「${query}」（範圍: ${scope.name}）`)
   // 建立 SearchVisitor，對 activeScope 執行遍歷
   const v = new SearchVisitor(query)
   scope.accept(v)
@@ -124,6 +132,7 @@ const runSearch = () => {
 
 const exportXml = () => {
   const scope = activeScope.value
+  logStart(`匯出 XML（範圍: ${scope.name}）`)
   const v = new XmlExportVisitor()
   visitorResult.value = {
     title:   '📝 XML 匯出結果',
@@ -199,7 +208,7 @@ const hasTag = (tag: string): boolean =>
 
       <!-- ┌─────────────── LEFT: FILE TREE ──────────────────┐ -->
       <aside
-        class="flex-none w-[272px] flex flex-col bg-[#161b22] border-r border-[#30363d] overflow-hidden"
+        class="flex-none w-[360px] flex flex-col bg-[#161b22] border-r border-[#30363d] overflow-hidden"
       >
         <!-- Sidebar header -->
         <div class="flex-none flex items-center px-4 py-2.5 border-b border-[#30363d]">
