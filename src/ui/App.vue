@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, shallowRef } from 'vue'
+import { ref, computed, nextTick, shallowRef } from 'vue'
 import { root, commandManager } from '@core/index'
 import { SizeVisitor, SearchVisitor, XmlExportVisitor } from '@core/visitor'
 import { TagCommand } from '@core/command'
@@ -18,6 +18,14 @@ const forceUpdate = () => { updateKey.value++ }
 // ─────────────────────────────────────────────────────────────
 const selectedNode = shallowRef<FileSystemNode | null>(null)
 const selectNode = (node: FileSystemNode) => { selectedNode.value = node }
+
+/** #1 路徑追溯：利用 getPath() 決定實時計算 */
+const selectedPath = computed(() =>
+  selectedNode.value ? selectedNode.value.getPath() : ''
+)
+
+/** 操作作用範圍：如果有選取節點則對其執行，否則回視到 root */
+const activeScope = computed(() => selectedNode.value ?? root)
 
 /** 根據節點型別回傳對應 Emoji */
 const getNodeIcon = (node: FileSystemNode): string => {
@@ -76,25 +84,35 @@ const logClass = (type: LogType): string =>
 const clearLogs = () => { logs.value = [] }
 
 // ─────────────────────────────────────────────────────────────
-// Visitor 操作
+// #2 Visitor 操作（對 activeScope 執行，不再寫死對 root）
 // ─────────────────────────────────────────────────────────────
 interface VisitorResult { title: string; content: string }
 const visitorResult = ref<VisitorResult | null>(null)
 
 const calcSize = () => {
+  const scope = activeScope.value
   const v = new SizeVisitor()
-  const size = root.accept(v) as number
+  const size = scope.accept(v) as number
   visitorResult.value = {
     title:   '📦 總容量計算結果',
-    content: `總容量：${size} KB（${(size / 1024).toFixed(2)} MB）`,
+    content: `範圍：${scope.name}\n總容量：${size} KB（${(size / 1024).toFixed(2)} MB）`,
   }
 }
 
-const searchDocx = () => {
-  const v = new SearchVisitor('.docx')
-  root.accept(v)
+// #3 動態搜尋：searchQuery 由使用者輸入
+const searchQuery = ref('.docx')
+
+const runSearch = () => {
+  const scope = activeScope.value
+  const query = searchQuery.value.trim()
+  if (!query) {
+    logs.value.push({ id: _logId++, message: '[系統] 請輸入搜尋關鍵字', type: 'system' })
+    return
+  }
+  const v = new SearchVisitor(query)
+  scope.accept(v)
   visitorResult.value = {
-    title: `🔍 搜尋結果：.docx 檔案（共 ${v.results.length} 筆）`,
+    title: `🔍 搜尋結果："${query}"（範圍: ${scope.name}，共 ${v.results.length} 筆）`,
     content: v.results.length > 0
       ? v.results.map(f => `• ${f.name}  [${f.size} KB]`).join('\n')
       : '找不到符合的檔案',
@@ -102,17 +120,18 @@ const searchDocx = () => {
 }
 
 const exportXml = () => {
+  const scope = activeScope.value
   const v = new XmlExportVisitor()
   visitorResult.value = {
     title:   '📝 XML 匯出結果',
-    content: root.accept(v) as string,
+    content: scope.accept(v) as string,
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// Command 操作
+// #4 Command 操作：Toggle 標簽（已有則移除，未有則新增）
 // ─────────────────────────────────────────────────────────────
-const addTag = (tag: string) => {
+const toggleTag = (tag: string) => {
   if (!selectedNode.value) {
     logs.value.push({
       id: _logId++,
@@ -121,14 +140,20 @@ const addTag = (tag: string) => {
     })
     return
   }
-  commandManager.execute(new TagCommand(selectedNode.value, tag, 'add'))
+  // TagCommand 構造式自動 Toggle
+  commandManager.execute(new TagCommand(selectedNode.value, tag))
   forceUpdate()
 }
 
+// #5 Undo：按鈕正确 disabled + 動態顯示最後一個命令名稱
 const undoCmd = () => {
   commandManager.undo()
   forceUpdate()
 }
+
+/** 判斷選取節點是否已有某標簽（給按鈕顯示 Toggle 狀態） */
+const hasTag = (tag: string): boolean =>
+  !!selectedNode.value?.tags.has(tag)
 </script>
 
 <template>
@@ -227,8 +252,19 @@ const undoCmd = () => {
       <!-- ┌─────────────── RIGHT PANEL ──────────────────────┐ -->
       <div class="flex-1 flex flex-col overflow-hidden">
 
-        <!-- Top: scrollable actions + result -->
         <div class="flex-1 overflow-y-auto p-4 space-y-4">
+
+          <!-- ╔══ #1 Current Path Banner ══════════════════════╗ -->
+          <div
+            v-if="selectedPath"
+            class="flex items-center gap-2 px-3 py-2 bg-[#161b22] border border-[#30363d]
+                   rounded-lg overflow-hidden"
+          >
+            <span class="text-[10px] font-mono text-gray-700 flex-none uppercase tracking-widest">路徑</span>
+            <span class="text-[11px] font-mono text-[#58a6ff] truncate" :title="selectedPath">
+              {{ selectedPath }}
+            </span>
+          </div>
 
           <!-- ── Action Cards Row ─────────────────────────── -->
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -241,16 +277,33 @@ const undoCmd = () => {
                 <span class="ml-auto text-[10px] text-gray-700 font-mono">Visitor Pattern</span>
               </div>
               <div class="p-3 space-y-2">
+                <!-- Scope hint -->
+                <div class="flex items-center gap-1.5 px-2 py-1 mb-1 rounded bg-[#0d1117] border border-[#30363d]">
+                  <span class="text-[9px] font-mono text-gray-700 uppercase tracking-widest flex-none">作用範圍</span>
+                  <span class="text-[11px] font-mono text-gray-400 truncate">
+                    {{ activeScope.name }}
+                  </span>
+                </div>
                 <button @click="calcSize" class="action-btn hover:border-purple-500/25">
                   <span class="icon-badge bg-purple-500/10 border-purple-500/20">📦</span>
                   <span class="action-label">計算總容量</span>
                   <span class="action-hint">SizeVisitor</span>
                 </button>
-                <button @click="searchDocx" class="action-btn hover:border-blue-500/25">
-                  <span class="icon-badge bg-blue-500/10 border-blue-500/20">🔍</span>
-                  <span class="action-label">搜尋 .docx</span>
-                  <span class="action-hint">SearchVisitor</span>
-                </button>
+                <!-- #3 Search with dynamic input -->
+                <div class="flex gap-1.5">
+                  <input
+                    v-model="searchQuery"
+                    @keyup.enter="runSearch"
+                    placeholder="副檔名或關鍵字…"
+                    class="flex-1 min-w-0 px-2.5 py-1.5 bg-[#0d1117] border border-[#30363d] rounded-lg
+                           text-[12px] font-mono text-gray-300 placeholder-gray-700
+                           focus:outline-none focus:border-[#58a6ff]/50 transition-colors"
+                  />
+                  <button @click="runSearch" class="action-btn !w-auto px-3 hover:border-blue-500/25">
+                    <span class="text-sm">🔍</span>
+                    <span class="text-[12px] text-gray-300">搜尋</span>
+                  </button>
+                </div>
                 <button @click="exportXml" class="action-btn hover:border-teal-500/25">
                   <span class="icon-badge bg-teal-500/10 border-teal-500/20">📝</span>
                   <span class="action-label">匯出 XML</span>
@@ -279,33 +332,41 @@ const undoCmd = () => {
                        : '← 請先點選左側節點' }}
                   </span>
                 </div>
-                <!-- Urgent -->
-                <button @click="addTag('Urgent')" class="action-btn hover:border-red-500/25">
+                <!-- #4 Urgent Toggle -->
+                <button @click="toggleTag('Urgent')" class="action-btn hover:border-red-500/25">
                   <span class="icon-badge bg-red-500/10 border-red-500/20">🔴</span>
-                  <span class="action-label">標記 Urgent</span>
-                  <span class="action-hint">TagCommand</span>
+                  <span class="action-label">
+                    {{ hasTag('Urgent') ? '移除 Urgent' : '標記 Urgent' }}
+                  </span>
+                  <span class="action-hint" :class="hasTag('Urgent') ? 'text-red-600' : ''">TagCommand</span>
                 </button>
-                <!-- Work -->
-                <button @click="addTag('Work')" class="action-btn hover:border-[#58a6ff]/25">
+                <!-- #4 Work Toggle -->
+                <button @click="toggleTag('Work')" class="action-btn hover:border-[#58a6ff]/25">
                   <span class="icon-badge bg-[#58a6ff]/10 border-[#58a6ff]/20">🔵</span>
-                  <span class="action-label">標記 Work</span>
-                  <span class="action-hint">TagCommand</span>
+                  <span class="action-label">
+                    {{ hasTag('Work') ? '移除 Work' : '標記 Work' }}
+                  </span>
+                  <span class="action-hint" :class="hasTag('Work') ? 'text-[#58a6ff]' : ''">TagCommand</span>
                 </button>
-                <!-- Undo -->
+                <!-- #5 Undo with dynamic name -->
                 <button
                   @click="undoCmd"
                   :disabled="!commandManager.canUndo"
                   class="action-btn hover:border-yellow-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <span class="icon-badge bg-yellow-500/10 border-yellow-500/20">↩</span>
-                  <span class="action-label">Undo 復原</span>
+                  <span class="action-label">
+                    <template v-if="commandManager.canUndo">
+                      Undo
+                      <span class="text-yellow-500/80">（復原: {{ commandManager.lastCommandName }}）</span>
+                    </template>
+                    <template v-else>Undo 復原</template>
+                  </span>
                   <span
                     class="action-hint"
                     :class="commandManager.canUndo ? 'text-yellow-600' : ''"
                   >
-                    {{ commandManager.canUndo
-                       ? `${commandManager.undoCount} 步可還原`
-                       : '無可還原' }}
+                    {{ commandManager.canUndo ? `${commandManager.undoCount} 步` : '無可還原' }}
                   </span>
                 </button>
               </div>

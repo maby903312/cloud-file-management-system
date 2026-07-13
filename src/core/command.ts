@@ -8,6 +8,8 @@ import type { FileSystemNode } from './composite'
 // ICommand 介面
 // ────────────────────────────────────────────────────────────
 export interface ICommand {
+  /** 人可讀命令名稱，用於 UI 顯示 */
+  readonly name: string
   execute(): void
   undo(): void
 }
@@ -63,33 +65,45 @@ export class CommandManager {
   get redoCount(): number {
     return this.redoStack.length
   }
+
+  /** 最後一個動作的名稱，給 Undo 按鈕顯示用 */
+  get lastCommandName(): string {
+    if (this.undoStack.length === 0) return ''
+    return this.undoStack[this.undoStack.length - 1].name
+  }
 }
 
-// ────────────────────────────────────────────────────────────
-// TagCommand：為節點貼上或移除標籤
-//   - 備份舊有標籤集合，以供 Undo 完整還原
-// ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────
+// TagCommand：為節點貼上或移除標簽（支援 Toggle）
+//   - 構造時自動判斷節點是否已有該標簽：
+//     有 → 移除，無 → 新增
+//   - 備份舊標簽集合，以供 Undo 完整還原
+// ────────────────────────────────────────────────────────────────
 export class TagCommand implements ICommand {
   private node: FileSystemNode
   private tag: string
   private action: 'add' | 'remove'
   private previousTags: Set<string>
+  readonly name: string
 
   /**
-   * @param node   目標節點
-   * @param tag    標籤字串
-   * @param action 'add' | 'remove'
+   * @param node 目標節點
+   * @param tag  標簽字串
+   *
+   * action 由構造式自動判斷：
+   *   節點已有該標簽 → remove，否則 → add
    */
-  constructor(node: FileSystemNode, tag: string, action: 'add' | 'remove' = 'add') {
+  constructor(node: FileSystemNode, tag: string) {
     this.node = node
     this.tag = tag
-    this.action = action
-    // 備份舊標籤（深拷貝）
+    this.action = node.tags.has(tag) ? 'remove' : 'add'
+    this.name = this.action === 'add' ? `標記 ${tag}` : `移除 ${tag}`
+    // 備份舊標簽（深拷貝）
     this.previousTags = new Set(node.tags)
   }
 
   execute(): void {
-    console.log(`[Command] 執行... ${this.action === 'add' ? '新增' : '移除'} 標籤「${this.tag}」於「${this.node.name}」`)
+    console.log(`[Command] 執行... ${this.action === 'add' ? '新增' : '移除'} 標簽「${this.tag}」於「${this.node.name}」`)
     if (this.action === 'add') {
       this.node.tags.add(this.tag)
     } else {
@@ -98,8 +112,8 @@ export class TagCommand implements ICommand {
   }
 
   undo(): void {
-    console.log(`[Undo] 恢復... 還原「${this.node.name}」的標籤至執行前狀態`)
-    // 完整還原舊標籤集合
+    console.log(`[Undo] 恢復... 還原「${this.node.name}」的標簽至執行前狀態`)
+    // 完整還原舊標簽集合
     this.node.tags.clear()
     this.previousTags.forEach((t) => this.node.tags.add(t))
   }

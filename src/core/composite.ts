@@ -13,12 +13,23 @@ export abstract class FileSystemNode {
   public size: number          // 單位：KB
   public createdAt: Date
   public tags: Set<string>
+  /** 指向父目錄，根節點為 null */
+  public parent: Directory | null = null
 
   constructor(name: string, size: number, createdAt?: Date) {
     this.name = name
     this.size = size
     this.createdAt = createdAt ?? new Date()
     this.tags = new Set<string>()
+  }
+
+  /**
+   * 遞迴往上追溯 parent，組合完整絕對路徑。
+   * 例如：Root/專案文件_Project_Docs/需求規格書.docx
+   */
+  getPath(): string {
+    if (this.parent === null) return this.name
+    return `${this.parent.getPath()}/${this.name}`
   }
 
   /** 接受訪問者（Visitor Pattern 的 accept 鉤子） */
@@ -36,8 +47,9 @@ export class Directory extends FileSystemNode {
     this.children = []
   }
 
-  /** 加入子節點 */
+  /** 加入子節點，並自動設定 parent 回指 */
   add(node: FileSystemNode): this {
+    node.parent = this
     this.children.push(node)
     return this
   }
