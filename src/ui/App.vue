@@ -203,8 +203,10 @@ const copyNode = () => {
     logs.value.push({ id: _logId++, message: '[系統] 請先選取節點再複製', type: 'system' })
     return
   }
-  clipboard.value = selectedNode.value
-  logs.value.push({ id: _logId++, message: `[系統] 已複製「${selectedNode.value.name}」到剪貼谿`, type: 'system' })
+  // 立即 clone 一份快照存入剪貼簿，避免後續貼上操作修改原節點後
+  // 再次貼時 clone 到包含舊副本子節點的「膨脹版」節點
+  clipboard.value = selectedNode.value.clone()
+  logs.value.push({ id: _logId++, message: `[系統] 已複製「${selectedNode.value.name}」到剪貼簿`, type: 'system' })
 }
 
 const pasteNode = () => {
