@@ -1,6 +1,6 @@
 # 雲端檔案管理系統
 
-> **Cloud File Management System** — 以三種 GoF 設計模式為核心的雲端檔案管理 Web 應用程式
+> **Cloud File Management System** — 雲端檔案管理 Web 應用程式
 
 ## 啟動方式
 
