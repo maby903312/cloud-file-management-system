@@ -542,7 +542,7 @@ const deleteNode = () => {
         </div>
 
         <!-- ── System Log ─────────────────────────────────── -->
-        <div class="flex-none h-52 flex flex-col border-t border-[#30363d] bg-[#080b10]">
+        <div class="flex-none h-72 flex flex-col border-t border-[#30363d] bg-[#080b10]">
           <!-- Toolbar -->
           <div
             class="flex-none flex items-center gap-2 px-4 py-2 bg-[#161b22] border-b border-[#30363d]"
